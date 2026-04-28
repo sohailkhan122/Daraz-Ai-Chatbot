@@ -1,36 +1,87 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Gemini Product Chatbot (Next.js)
 
-## Getting Started
+This project is an AI chatbot that accepts a shopping query, uses Gemini to extract the product name, scrapes product results from Daraz, and returns product details with clickable website links.
 
-First, run the development server:
+## Features
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- Gemini-powered product name extraction
+- Server-side product scraping from Daraz
+- API response with title, price, source, and product link
+- Chat UI with loading and error states
+
+## Project Structure
+
+```text
+app/
+	api/
+		chat/
+			route.js         # Chat API route (Gemini + scraper orchestration)
+	page.tsx             # Chatbot UI
+lib/
+	gemini.js            # Gemini integration + fallback extractor
+	scraper.js           # Daraz scraper
+.env.example           # Required environment variables
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+## Setup
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+1. Install dependencies:
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+	 npm install
 
-## Learn More
+2. Create environment file:
 
-To learn more about Next.js, take a look at the following resources:
+	 copy .env.example .env.local
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+3. Put your Gemini API key in `.env.local`:
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+	 GEMINI_API_KEY=your_key_here
 
-## Deploy on Vercel
+4. Optional model override:
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+	 GEMINI_MODEL=gemini-2.5-flash-lite
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+5. Run the app:
+
+	 npm run dev
+
+6. Open:
+
+	 http://localhost:3000
+
+## API Contract
+
+### POST `/api/chat`
+
+Request body:
+
+```json
+{
+	"message": "iphone 13 128gb price"
+}
+```
+
+Success response:
+
+```json
+{
+	"reply": "Found 5 products for \"iphone 13 128gb\"",
+	"query": "iphone 13 128gb",
+	"products": [
+		{
+			"title": "Apple iPhone 13",
+			"price": "Rs. 179,999",
+			"link": "https://www.daraz.pk/products/...",
+			"source": "Daraz"
+		}
+	]
+}
+```
+
+Error response:
+
+```json
+{
+	"error": "Message is required."
+}
+```
