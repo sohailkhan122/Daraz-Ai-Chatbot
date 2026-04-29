@@ -19,7 +19,6 @@
 .chat-scroll {
   scrollbar-width: thin;
   scrollbar-color: rgba(251, 191, 36, 0.65) rgba(15, 23, 42, 0.25);
-  scrollbar-gutter: stable;
 }
 
 .chat-scroll::-webkit-scrollbar {
@@ -42,6 +41,14 @@
   background: linear-gradient(180deg, rgba(253, 230, 138, 0.98), rgba(103, 232, 249, 0.95));
 }
 
+textarea {
+  scrollbar-width: none !important;
+}
+
+textarea::-webkit-scrollbar {
+  display: none;
+}
+
 html {
   min-height: 100%;
   background:
@@ -56,6 +63,7 @@ body {
   background: var(--background);
   color: var(--foreground);
   font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  overflow-x: hidden;
 }
 
 ::selection {

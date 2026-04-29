@@ -28,6 +28,104 @@ function normalizeText(text) {
     .trim();
 }
 
+function extractPriceValue(priceText) {
+  const match = String(priceText || "").replace(/,/g, "").match(/(\d+(?:\.\d+)?)/);
+  return match ? Number(match[1]) : Number.NaN;
+}
+
+function extractBudgetLimit(text) {
+  const normalized = normalizeText(text);
+  const match = normalized.match(/(?:under|below|within|less than|upto|up to|max|maximum)\s*(\d+(?:\.\d+)?)/);
+  if (!match) return null;
+
+  const limit = Number(match[1]);
+  return Number.isFinite(limit) ? limit : null;
+}
+
+function filterByBudget(products, budgetLimit) {
+  if (!Number.isFinite(budgetLimit)) return products;
+
+  return products.filter((product) => {
+    const priceValue = extractPriceValue(product.price);
+    if (!Number.isFinite(priceValue)) return true;
+    return priceValue <= budgetLimit;
+  });
+}
+
+const FOLLOW_UP_HINTS = new Set([
+  "price",
+  "budget",
+  "under",
+  "below",
+  "over",
+  "above",
+  "size",
+  "color",
+  "colour",
+  "red",
+  "blue",
+  "green",
+  "black",
+  "white",
+  "small",
+  "medium",
+  "large",
+  "xl",
+  "xxl",
+  "xxxl",
+  "rs",
+  "rupees",
+  "pkr",
+]);
+
+const FILTER_ONLY_UNITS = new Set(["gb", "tb", "kg", "g", "cm", "inch", "in", "rs", "pkr"]);
+
+function getLastProductContext(history) {
+  for (let index = history.length - 1; index >= 0; index -= 1) {
+    const entry = history[index];
+    const query = String(entry?.query || entry?.normalizedQuery || "").trim();
+    if (query) return query;
+
+    const userText = String(entry?.user || "").trim();
+    if (userText && userText.split(/\s+/).length > 1) {
+      return userText;
+    }
+  }
+
+  return "";
+}
+
+function shouldTreatAsFollowUp(message) {
+  const normalized = normalizeText(message);
+  if (!normalized) return false;
+
+  const words = normalized.split(" ").filter(Boolean);
+  if (!words.length) return false;
+
+  return words.every((word) =>
+    FOLLOW_UP_HINTS.has(word) ||
+    FILTER_ONLY_UNITS.has(word) ||
+    /^\d+(?:\.\d+)?$/.test(word)
+  );
+}
+
+function resolveContextualQuery(message, history) {
+  const currentMessage = String(message || "").trim();
+  const lastContext = getLastProductContext(Array.isArray(history) ? history : []);
+
+  if (!lastContext) return currentMessage;
+  if (!shouldTreatAsFollowUp(currentMessage)) return currentMessage;
+
+  return `${lastContext} ${currentMessage}`.trim();
+}
+
+function isFollowUpQuery(message, history) {
+  const currentMessage = String(message || "").trim();
+  const lastContext = getLastProductContext(Array.isArray(history) ? history : []);
+
+  return Boolean(lastContext) && shouldTreatAsFollowUp(currentMessage);
+}
+
 function getMatchTerms(query) {
   const stopwords = new Set(["watt", "watts", "w", "kw", "kwp", "wp"]);
 
@@ -70,6 +168,7 @@ export async function POST(req) {
   try {
     const body = await req.json();
     const message = String(body?.message || "").trim();
+    const history = Array.isArray(body?.history) ? body.history : [];
 
     if (!message) {
       return Response.json(
@@ -78,8 +177,13 @@ export async function POST(req) {
       );
     }
 
-    const analysis = await analyzeShoppingQuery(message);
-    const productName = analysis.exactQuery;
+    const contextualMessage = resolveContextualQuery(message, history);
+    const followUpQuery = isFollowUpQuery(message, history);
+    const budgetLimit = extractBudgetLimit(contextualMessage);
+    const analysis = followUpQuery
+      ? null
+      : await analyzeShoppingQuery(contextualMessage);
+    const productName = followUpQuery ? contextualMessage : analysis.exactQuery;
 
     if (!productName) {
       return Response.json(
@@ -88,7 +192,10 @@ export async function POST(req) {
       );
     }
 
-    const darazProducts = formatProducts(filterExactProducts(await scrapeDaraz(productName), productName));
+    const darazProducts = filterByBudget(
+      formatProducts(filterExactProducts(await scrapeDaraz(productName), productName)),
+      budgetLimit
+    );
 
     if (darazProducts.length) {
       return Response.json({
@@ -99,16 +206,22 @@ export async function POST(req) {
       });
     }
 
-    const relatedQueries = [...new Set((analysis.relatedHints?.length
+    const relatedSourceQueries = analysis?.relatedHints?.length
       ? analysis.relatedHints
-      : await generateRelatedProductQueries(productName))
-      .map((query) => String(query || "").trim())
-      .filter(Boolean))]
-      .filter((query) => normalizeText(query) !== normalizeText(productName));
+      : await generateRelatedProductQueries(productName);
+
+    const relatedQueries = [...new Set(
+      relatedSourceQueries
+        .map((query) => String(query || "").trim())
+        .filter(Boolean)
+    )].filter((query) => normalizeText(query) !== normalizeText(productName));
     let relatedProducts = [];
 
     for (const relatedQuery of relatedQueries) {
-      const items = filterRelatedProducts(await scrapeDaraz(relatedQuery), productName);
+      const items = filterByBudget(
+        filterRelatedProducts(await scrapeDaraz(relatedQuery), productName),
+        budgetLimit
+      );
       relatedProducts = dedupeByLink([...relatedProducts, ...items]).slice(0, 5);
       if (relatedProducts.length >= 5) break;
     }
